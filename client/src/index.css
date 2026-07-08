@@ -1,0 +1,111 @@
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,100..900;1,9..144,100..900&family=Inter:wght@100..900&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-background-light text-text-primary-light font-sans antialiased transition-colors duration-300;
+    margin: 0;
+    padding: 0;
+  }
+  body.dark {
+    @apply bg-background-dark text-text-primary-dark;
+  }
+}
+
+/* Lenis Smooth Scroll Configuration */
+html.lenis, html.lenis body {
+  height: auto;
+}
+
+.lenis.lenis-smooth {
+  scroll-behavior: auto !important;
+}
+
+.lenis.lenis-smooth [data-lenis-prevent] {
+  overscroll-behavior: contain;
+}
+
+.lenis.lenis-stopped {
+  overflow: hidden;
+}
+
+.lenis.lenis-scrolling iframe {
+  pointer-events: none;
+}
+
+/* Masonry Grid CSS utilities */
+.masonry-grid {
+  display: flex;
+  margin-left: -24px; /* gutter size offset */
+  width: auto;
+}
+
+.masonry-column {
+  padding-left: 24px; /* gutter size */
+  background-clip: padding-box;
+}
+
+/* Smooth fade-in and premium styling classes */
+.glassmorphism {
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+}
+
+.dark .glassmorphism {
+  background: rgba(33, 28, 41, 0.7);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+/* Brutalist component utilities */
+.brutal-border {
+  @apply border-2 border-text-primary-light dark:border-text-primary-dark;
+}
+
+.brutal-shadow {
+  box-shadow: 4px 4px 0px #121212;
+}
+
+.dark .brutal-shadow {
+  box-shadow: 4px 4px 0px #FBFBF9;
+}
+
+.brutal-shadow-hover:hover {
+  box-shadow: 6px 6px 0px #121212;
+}
+
+.dark .brutal-shadow-hover:hover {
+  box-shadow: 6px 6px 0px #FBFBF9;
+}
+
+/* Custom card hover transition */
+.premium-card {
+  @apply bg-surface-light dark:bg-surface-dark transition-all duration-300 ease-out brutal-border brutal-shadow;
+}
+
+.premium-card:hover {
+  transform: translate(-2px, -2px);
+  @apply brutal-shadow-hover border-accent-yellow dark:border-accent-yellow;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-track {
+  @apply bg-transparent;
+}
+::-webkit-scrollbar-thumb {
+  @apply bg-accent-berry/20 rounded-full hover:bg-accent-berry/40 transition-colors;
+}
+
+/* Safe area inset helper for PWAs on mobile notch devices */
+.pb-safe {
+  padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+}
