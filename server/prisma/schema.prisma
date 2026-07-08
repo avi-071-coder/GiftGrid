@@ -1,0 +1,67 @@
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model AnonIdentity {
+  id           String         @id @default(uuid())
+  sessionToken String         @unique
+  createdAt    DateTime       @default(now())
+  boards       Board[]
+  clips        Clip[]
+  profileShare ProfileShare?
+}
+
+model Board {
+  id         String       @id @default(uuid())
+  name       String
+  ownerId    String
+  owner      AnonIdentity @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  shareToken String       @unique
+  createdAt  DateTime     @default(now())
+  clips      Clip[]
+
+  @@index([ownerId])
+}
+
+model Clip {
+  id          String       @id @default(uuid())
+  boardId     String?
+  board       Board?       @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  ownerId     String
+  owner       AnonIdentity @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  title       String
+  price       Float?
+  currency    String       @default("USD")
+  imageUrl    String?
+  sourceUrl   String
+  storeName   String
+  umbrellaTag String
+  typeTag     String
+  createdAt   DateTime     @default(now())
+  claim       Claim?
+
+  @@index([boardId])
+  @@index([ownerId])
+}
+
+model Claim {
+  id         String   @id @default(uuid())
+  clipId     String   @unique
+  clip       Clip     @relation(fields: [clipId], references: [id], onDelete: Cascade)
+  claimedAt  DateTime @default(now())
+  guestLabel String?
+}
+
+model ProfileShare {
+  id         String       @id @default(uuid())
+  ownerId    String       @unique
+  owner      AnonIdentity @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  shareToken String       @unique
+  createdAt  DateTime     @default(now())
+  revokedAt  DateTime?
+}
