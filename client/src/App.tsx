@@ -1706,7 +1706,7 @@ export default function App() {
                 <path id="curve" fill="transparent" d="M 50, 50 m -38, 0 a 38,38 0 1,1 76,0 a 38,38 0 1,1 -76,0" />
                 <text className="text-[10px] font-black uppercase tracking-[0.2em] fill-black dark:fill-white">
                   <textPath href="#curve" startOffset="0%">
-                    CLIP • COLLAGE • CLAIM • CLIP • COLLAGE • CLAIM • 
+                    CLIP • COLLECT • COLLAGE • CLAIM • CLIP • COLLECT • COLLAGE • CLAIM • 
                   </textPath>
                 </text>
               </svg>
