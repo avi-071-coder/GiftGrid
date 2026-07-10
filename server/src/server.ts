@@ -137,8 +137,8 @@ async function sessionMiddleware(req: AuthenticatedRequest, res: Response, next:
       res.cookie('giftgrid_session', newToken, {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
-        sameSite: 'lax',
-        maxAge: 10 * 365 * 24 * 60 * 60 * 1000,
+        sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+        maxAge: 10 * 365 * 24 * 60 * 60 * 1000, // 10 years
       });
 
       // Also set header for the client to read if needed
