@@ -1,6 +1,7 @@
 import axios from 'axios';
 import * as cheerio from 'cheerio';
 import { URL } from 'url';
+import type { Browser } from 'puppeteer-core';
 
 export interface ScrapedProduct {
   title: string;
@@ -39,24 +40,24 @@ function resolveUrl(base: string, relative: string): string {
  */
 function parseNumericPrice(priceStr: string | null | undefined): number | null {
   if (!priceStr) return null;
-  
+
   // Standardize the string: convert to string, lowercase, and trim
   let str = String(priceStr).trim().toLowerCase();
-  
+
   // Reject ratings, discount percentages, reviews, etc.
   if (str.includes('out of') || str.includes('star') || str.includes('off') || str.includes('%') || str.includes('ratings') || str.includes('reviews')) {
     return null;
   }
-  
+
   // Specifically strip Rupee and standard currency symbols/prefixes
   str = str.replace(/₹\s*|rs\.?\s*/gi, '');
-  
+
   // Keep only digits, dots, and commas
   let cleaned = str.replace(/[^\d.,]/g, '');
-  
+
   const lastDot = cleaned.lastIndexOf('.');
   const lastComma = cleaned.lastIndexOf(',');
-  
+
   if (lastDot !== -1 && lastComma !== -1) {
     if (lastDot > lastComma) {
       // Dot is decimal separator. Remove all commas.
@@ -77,7 +78,7 @@ function parseNumericPrice(priceStr: string | null | undefined): number | null {
       cleaned = cleaned.replace(/,/g, '.');
     }
   }
-  
+
   const val = parseFloat(cleaned);
   return isNaN(val) ? null : val;
 }
@@ -87,7 +88,7 @@ function parseNumericPrice(priceStr: string | null | undefined): number | null {
  */
 function detectCurrencyFromTextAndUrl(html: string, url: string): string {
   const urlLower = url.toLowerCase();
-  
+
   // High confidence domain checks
   if (urlLower.includes('.in') || urlLower.includes('flipkart.com') || urlLower.includes('amazon.in')) {
     return 'INR';
@@ -145,26 +146,36 @@ function getRandomUserAgent(): string {
  */
 function isBotBlocked(html: string): boolean {
   const lower = html.toLowerCase();
-  
-  // If the page has real product content markers, it's NOT a bot block,
-  // even if the word "captcha" appears in JS bundles or cookie consent
-  const hasProductContent = 
+
+  // 1. If the page has real product content markers, it is NOT a bot block,
+  // even if the word "captcha" or other warning phrases appear on the page.
+  const hasProductContent =
     lower.includes('application/ld+json') ||
     lower.includes('og:title') ||
     lower.includes('product:price') ||
     lower.includes('og:price');
-  
+
   if (hasProductContent) {
     return false; // Real product page, not blocked
   }
-  
-  // Only flag as blocked if there are clear bot-detection indicators
-  // AND no real product content
+
+  // 2. Only flag as blocked if there are clear bot-detection/WAF indicators
   return (
     lower.includes('robot check') ||
     lower.includes('api-services-support@amazon') ||
     lower.includes('sorry, we just need to make sure') ||
     lower.includes('type the characters you see') ||
+    lower.includes('access denied') ||
+    lower.includes('permission denied') ||
+    lower.includes('cloudflare') ||
+    lower.includes('cf-challenge') ||
+    lower.includes('challenge-platform') ||
+    lower.includes('just a moment...') ||
+    lower.includes('attention required!') ||
+    lower.includes('security check') ||
+    lower.includes('robot-check') ||
+    lower.includes('automated request') ||
+    lower.includes('unusual activity') ||
     (lower.includes('captcha') && lower.includes('enter the characters')) ||
     (lower.includes('to discuss automated access') && lower.includes('amazon'))
   );
@@ -224,6 +235,13 @@ async function fetchWithRetry(targetUrl: string, maxRetries = 2): Promise<string
         decompress: true,
       });
 
+      // If HTTP status is not 200, we treat it as blocked/failed
+      if (response.status !== 200) {
+        console.warn(`[Scraper] Non-200 status code (${response.status}) on attempt ${attempt + 1}`);
+        lastError = new Error(`HTTP status ${response.status}`);
+        continue;
+      }
+
       const html = typeof response.data === 'string' ? response.data : String(response.data);
 
       // Check if we got blocked by bot detection
@@ -253,32 +271,178 @@ async function fetchWithRetry(targetUrl: string, maxRetries = 2): Promise<string
 }
 
 /**
- * Scrapes metadata and product details from a given URL.
+ * Launches a headless browser appropriate for the current environment.
+ *
+ * On Render (and other minimal Linux hosts without the system libraries
+ * a normal Chromium install needs — libnss3, libatk-1.0, etc.), the full
+ * `puppeteer` package's bundled Chromium fails to launch. We detect that
+ * environment and use `puppeteer-core` + `@sparticuz/chromium`, a
+ * self-contained Chromium build with no system-library dependencies.
+ *
+ * Locally (and anywhere else), we fall back to the full `puppeteer`
+ * package, which is the easiest way to develop/debug with a real browser.
  */
-export async function scrapeProductUrl(targetUrl: string): Promise<ScrapedProduct> {
-  if (!isValidHttpUrl(targetUrl)) {
-    throw new Error('Invalid target URL. Only HTTP/HTTPS URLs are supported.');
+async function getBrowser(): Promise<Browser> {
+  const isRestrictedLinuxHost = !!process.env.RENDER || process.env.NODE_ENV === 'production';
+
+  if (isRestrictedLinuxHost) {
+    const chromium = (await import('@sparticuz/chromium')).default;
+    const puppeteerCore = await import('puppeteer-core');
+    const executablePath = await chromium.executablePath();
+    return puppeteerCore.launch({
+      args: [
+        ...chromium.args,
+        '--disable-blink-features=AutomationControlled',
+        '--window-size=1366,768',
+      ],
+      executablePath,
+      headless: true,
+    }) as unknown as Browser;
   }
 
-  let html: string;
+  // Local development: use the full puppeteer package (devDependency) with
+  // its own bundled Chromium so nothing extra needs to be installed.
+  const puppeteer = (await import('puppeteer')).default;
+  const localBrowser = await puppeteer.launch({
+    headless: true,
+    args: [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-blink-features=AutomationControlled',
+      '--window-size=1366,768',
+    ],
+  });
+  return localBrowser as unknown as Browser;
+}
+
+/**
+ * Fallback fetch using Puppeteer (real headless browser) to bypass basic WAFs/Cloudflare.
+ */
+async function fetchWithPuppeteer(targetUrl: string): Promise<string> {
+  console.log(`[Scraper] Launching Puppeteer for robust fallback: ${targetUrl}`);
+
+  let browser: Browser | undefined;
   try {
-    html = await fetchWithRetry(targetUrl);
-  } catch (err: any) {
-    console.error(`[Scraper] All fetch attempts failed for ${targetUrl}: ${err.message}`);
-    // Return minimal fallback instead of throwing — the frontend can still show edit mode
-    const hostname = (() => {
-      try { return new URL(targetUrl).hostname.replace('www.', ''); } catch (_) { return 'Online Store'; }
-    })();
-    return {
-      title: 'Could not load product',
-      price: null,
-      currency: detectCurrencyFromTextAndUrl('', targetUrl),
-      imageUrl: null,
-      sourceUrl: targetUrl,
-      storeName: hostname,
-    };
+    browser = await getBrowser();
+
+    const page = await browser.newPage();
+
+    // Comprehensive Evasion Script to Spoof Real Browser
+    await page.evaluateOnNewDocument(`
+      // 1. Disable navigator.webdriver
+      Object.defineProperty(navigator, 'webdriver', {
+        get: () => undefined
+      });
+
+      // 2. Spoof Languages
+      Object.defineProperty(navigator, 'languages', {
+        get: () => ['en-US', 'en-IN', 'en']
+      });
+
+      // 3. Spoof Plugins
+      Object.defineProperty(navigator, 'plugins', {
+        get: () => {
+          const pluginsList = [
+            { name: 'Chrome PDF Viewer', filename: 'internal-pdf-viewer', description: 'Portable Document Format' },
+            { name: 'Chromium PDF Viewer', filename: 'internal-pdf-viewer', description: 'Portable Document Format' },
+            { name: 'Microsoft Edge PDF Viewer', filename: 'internal-pdf-viewer', description: 'Portable Document Format' }
+          ];
+          return pluginsList;
+        }
+      });
+
+      // 4. Spoof window.chrome
+      Object.defineProperty(window, 'chrome', {
+        value: {
+          app: {
+            isInstalled: false,
+            InstallState: { DISABLED: 'disabled', INSTALLED: 'installed', NOT_INSTALLED: 'not_installed' },
+            RunningState: { CANNOT_RUN: 'cannot_run', READY_TO_RUN: 'ready_to_run', RUNNING: 'running' }
+          },
+          runtime: {},
+          loadTimes: () => {},
+          csi: () => {}
+        }
+      });
+
+      // 5. Spoof permissions query
+      const originalQuery = window.navigator.permissions.query;
+      window.navigator.permissions.query = (parameters) => (
+        parameters.name === 'notifications' ?
+          Promise.resolve({ state: Notification.permission }) :
+          originalQuery(parameters)
+      );
+    `);
+
+    // Spoof realistic User-Agent and Viewport
+    await page.setUserAgent(getRandomUserAgent());
+    await page.setViewport({ width: 1366, height: 768 });
+
+    // Add realistic headers
+    await page.setExtraHTTPHeaders({
+      'Accept-Language': 'en-US,en-IN;q=0.9,en;q=0.8,hi;q=0.7',
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+      'Cache-Control': 'max-age=0'
+    });
+
+    // Attempt to navigate with a reasonable timeout
+    await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 25000 });
+
+    // Optional: wait a moment for react/vue to hydrate
+    await new Promise(r => setTimeout(r, 3000));
+
+    const html = await page.content();
+    return html;
+  } finally {
+    if (browser) {
+      await browser.close().catch(() => { });
+    }
+  }
+}
+
+function isGenericTitle(title: string, url: string): boolean {
+  const lower = title.toLowerCase().trim();
+  const domain = (() => {
+    try { return new URL(url).hostname.replace('www.', '').split('.')[0]; } catch (_) { return ''; }
+  })();
+
+  const genericPhrases = [
+    'products',
+    'product',
+    'online shopping',
+    'shopping cart',
+    'cart',
+    'checkout',
+    'home page',
+    'homepage',
+    'log in',
+    'login',
+    'sign up',
+    'signup',
+    'welcome',
+    'loading...',
+    'loading',
+    'please wait',
+    '30,000+ products delivered',
+    'ikea products',
+    'meesho - online shopping',
+    'meesho',
+    'blinkit',
+    'online store'
+  ];
+
+  if (genericPhrases.some(phrase => lower === phrase || lower.startsWith(phrase) || lower.endsWith(phrase))) {
+    return true;
   }
 
+  if (domain && lower === domain) {
+    return true;
+  }
+
+  return false;
+}
+
+function parseProductDetails(html: string, targetUrl: string): ScrapedProduct {
   const $ = cheerio.load(html);
 
   let title = '';
@@ -287,210 +451,172 @@ export async function scrapeProductUrl(targetUrl: string): Promise<ScrapedProduc
   let imageUrl: string | null = null;
   let storeName = '';
 
-  // 1. Try parsing JSON-LD schema (highly reliable for structured commerce data)
+  // 1. Try parsing JSON-LD schema
   $('script[type="application/ld+json"]').each((_, element) => {
     try {
       const text = $(element).html();
       if (!text) return;
       const data = JSON.parse(text);
-      
+
       // Traverse JSON-LD objects to find Product
       const findProduct = (obj: any): any => {
         if (!obj || typeof obj !== 'object') return null;
-        if (obj['@type'] === 'Product') return obj;
+        if (obj['@type'] === 'Product' || obj['@type']?.includes?.('Product')) return obj;
+
         if (Array.isArray(obj)) {
           for (const item of obj) {
-            const res = findProduct(item);
-            if (res) return res;
+            const found = findProduct(item);
+            if (found) return found;
           }
-        }
-        for (const key of Object.keys(obj)) {
-          const res = findProduct(obj[key]);
-          if (res) return res;
+        } else {
+          for (const key of Object.keys(obj)) {
+            const found = findProduct(obj[key]);
+            if (found) return found;
+          }
         }
         return null;
       };
 
       const product = findProduct(data);
       if (product) {
-        if (product.name && !title) title = product.name;
-        
-        // Image parsing
-        if (product.image) {
-          let img = '';
+        if (product.name && !title) {
+          title = String(product.name);
+        }
+
+        // Image
+        if (product.image && !imageUrl) {
           if (typeof product.image === 'string') {
-            img = product.image;
-          } else if (Array.isArray(product.image) && product.image.length > 0) {
-            img = typeof product.image[0] === 'string' ? product.image[0] : product.image[0].url;
+            imageUrl = product.image;
+          } else if (Array.isArray(product.image) && product.image.length) {
+            imageUrl = String(product.image[0]);
           } else if (typeof product.image === 'object' && product.image.url) {
-            img = product.image.url;
-          }
-          if (img && !imageUrl) {
-            imageUrl = resolveUrl(targetUrl, img);
+            imageUrl = String(product.image.url);
           }
         }
 
-         // Offers (Price) parsing
+        // Price & Currency
         if (product.offers) {
           const offers = Array.isArray(product.offers) ? product.offers : [product.offers];
           for (const offer of offers) {
-            if (offer.price !== undefined) {
-              const val = parseNumericPrice(offer.price.toString());
-              if (val !== null && price === null) {
-                price = val;
-              }
-              if (offer.priceCurrency && !currency) {
-                currency = offer.priceCurrency;
-              }
-            } else if (offer.lowPrice !== undefined) {
-              const val = parseNumericPrice(offer.lowPrice.toString());
-              if (val !== null && price === null) {
-                price = val;
-              }
-              if (offer.priceCurrency && !currency) {
-                currency = offer.priceCurrency;
-              }
+            if (offer.price && price === null) {
+              price = parseNumericPrice(String(offer.price));
             }
-          }
-        }
-
-        // Brand (Store Name) parsing
-        if (product.brand) {
-          const brandName = typeof product.brand === 'string' ? product.brand : product.brand.name;
-          if (brandName && !storeName) {
-            storeName = brandName;
+            if (offer.priceCurrency && currency === 'USD') {
+              currency = String(offer.priceCurrency).trim().toUpperCase();
+            }
           }
         }
       }
     } catch (_) {
-      // Ignore JSON-LD syntax errors and look in other scripts
+      // Ignore JSON-LD parse errors
     }
   });
 
-  // 2. Open Graph & Twitter fallbacks
-  
-  // Title
+  // 2. Open Graph meta tags
   if (!title) {
-    title = 
+    title =
       $('meta[property="og:title"]').attr('content') ||
       $('meta[name="twitter:title"]').attr('content') ||
       $('title').text() ||
       '';
-    title = title.trim();
   }
 
-  // Strip common site-name suffixes from titles (e.g., "Product Name - Amazon.in" -> "Product Name")
+  // 3. Fallback product title selectors
+  if (!title || isGenericTitle(title, targetUrl)) {
+    const titleSelectors = [
+      'h1.product-title',
+      'h1.product_title',
+      'h1[class*="title" i]',
+      'h1[id*="title" i]',
+      'h1',
+      '.product-name',
+      '.product-title',
+      'h2.product-title'
+    ];
+    for (const selector of titleSelectors) {
+      const txt = $(selector).first().text().trim();
+      if (txt && !isGenericTitle(txt, targetUrl)) {
+        title = txt;
+        break;
+      }
+    }
+  }
+
+  // Clean title
   if (title) {
     title = title
-      .replace(/\s*[-–|:]\s*(Amazon\.\w+|Flipkart\.com|Flipkart|Online Shopping|Buy Online).*$/i, '')
-      .replace(/\s*[-–|:]\s*$/, '')
+      .replace(/\r?\n|\r/g, ' ')
+      .replace(/\s+/g, ' ')
       .trim();
+
+    const suffixPatterns = [
+      /\s*\|\s*Flipkart\s*$/i,
+      /\s*-\s*Flipkart\s*$/i,
+      /\s*:\s*Amazon\.in\s*$/i,
+      /\s*\|\s*Amazon\s*$/i,
+      /\s*-\s*Amazon\s*$/i,
+      /\s*\|\s*IKEA\s*$/i,
+      /\s*-\s*IKEA\s*$/i,
+      /\s*-\s*Meesho\s*$/i,
+      /\s*\|\s*Blinkit\s*$/i
+    ];
+    for (const pattern of suffixPatterns) {
+      title = title.replace(pattern, '');
+    }
   }
 
-  // --- IMAGE EXTRACTION ---
-  
-  // OG/Twitter image (works well for most sites including Amazon when served to real browsers)
+  // Image URL
   if (!imageUrl) {
-    const ogImage = $('meta[property="og:image"]').attr('content') ||
-                    $('meta[property="og:image:secure_url"]').attr('content') ||
-                    $('meta[name="twitter:image"]').attr('content');
-    if (ogImage) {
-      imageUrl = resolveUrl(targetUrl, ogImage);
+    imageUrl =
+      $('meta[property="og:image"]').attr('content') ||
+      $('meta[name="twitter:image"]').attr('content') ||
+      $('link[rel="image_src"]').attr('href') || null;
+
+    if (!imageUrl) {
+      const amazonImg =
+        $('#landingImage').attr('data-old-hires') ||
+        $('#landingImage').attr('src') ||
+        $('#imgBlkFront').attr('src') ||
+        $('#ebooksImgBlkFront').attr('src') || null;
+      if (amazonImg) {
+        imageUrl = amazonImg;
+      }
+    }
+
+    if (!imageUrl) {
+      const altAmazon = $('#main-image').attr('src') || null;
+      if (altAmazon) imageUrl = altAmazon;
+    }
+
+    if (!imageUrl) {
+      const itempropImg = $('[itemprop="image"]').attr('src') || $('[itemprop="image"]').attr('content') || null;
+      if (itempropImg) imageUrl = itempropImg;
+    }
+
+    if (!imageUrl) {
+      const shopifyImg = $('.product-single__photo').attr('src') || $('.product-featured-img').attr('src') || null;
+      if (shopifyImg) {
+        imageUrl = shopifyImg;
+      }
+    }
+
+    if (!imageUrl) {
+      const flipkartImg = $('img._396cs4').first() || $('img._2r_T1I').first() || $('img._3togXc').first();
+      if (flipkartImg.length) imageUrl = flipkartImg.attr('src') || null;
     }
   }
 
-  // Amazon-specific image selectors
-  if (!imageUrl) {
-    // A. Check landingImage (standard Amazon product pages)
-    const landingImage = $('#landingImage');
-    if (landingImage.length) {
-      const dynamicImageAttr = landingImage.attr('data-a-dynamic-image');
-      if (dynamicImageAttr) {
-        try {
-          const imgs = JSON.parse(dynamicImageAttr);
-          const urls = Object.keys(imgs);
-          if (urls.length > 0) {
-            imageUrl = urls[urls.length - 1]; // highest resolution
-          }
-        } catch (_) {}
-      }
-      if (!imageUrl) {
-        imageUrl = landingImage.attr('src') || landingImage.attr('data-old-hires') || null;
-      }
-    }
+  if (imageUrl) imageUrl = resolveUrl(targetUrl, imageUrl);
 
-    // B. Check book/kindle image cover
-    if (!imageUrl) {
-      const imgBlkFront = $('#imgBlkFront');
-      if (imgBlkFront.length) {
-        const dynamicImageAttr = imgBlkFront.attr('data-a-dynamic-image');
-        if (dynamicImageAttr) {
-          try {
-            const imgs = JSON.parse(dynamicImageAttr);
-            const urls = Object.keys(imgs);
-            if (urls.length > 0) {
-              imageUrl = urls[urls.length - 1];
-            }
-          } catch (_) {}
-        }
-        if (!imageUrl) {
-          imageUrl = imgBlkFront.attr('src') || null;
-        }
-      }
-    }
-
-    // C. Check non-js fallback main image
-    if (!imageUrl) {
-      imageUrl = $('#main-image-non-js').attr('src') || null;
-    }
-
-    // D. Check generic main image container
-    if (!imageUrl) {
-      imageUrl = $('#main-image').attr('src') || null;
-    }
-
-    // E. Flipkart specific selectors
-    if (!imageUrl) {
-      const flipkartImg = $('img._396cs4') || $('img._2r_T1I') || $('img._3togXc');
-      if (flipkartImg.length) {
-        imageUrl = flipkartImg.attr('src') || null;
-      }
-    }
-
-    // F. General page images (find large ones)
-    if (!imageUrl) {
-      $('img').each((_, el) => {
-        const src = $(el).attr('src');
-        const id = ($(el).attr('id') || '').toLowerCase();
-        const cls = ($(el).attr('class') || '').toLowerCase();
-        const alt = ($(el).attr('alt') || '').toLowerCase();
-        
-        if (src && (
-          id.includes('prod') || id.includes('main') || cls.includes('front') || 
-          id.includes('primary') || src.includes('/products/') || src.includes('/images/I/') ||
-          src.includes('images.meesho.com') || alt.includes('product') || cls.includes('image')
-        )) {
-          imageUrl = src;
-          return false; // Break
-        }
-      });
-    }
-  }
-
-  if (imageUrl) {
-    imageUrl = resolveUrl(targetUrl, imageUrl);
-  }
-
-  // Price
+  // Price fallback selectors
   if (price === null) {
-    const rawPrice = 
+    const rawPrice =
       $('meta[property="product:price:amount"]').attr('content') ||
       $('meta[property="og:price:amount"]').attr('content') ||
-      $('meta[name="twitter:data1"]').attr('content'); // Shopify uses twitter:label1 = "Price", twitter:data1 = "$100.00"
-      
+      $('meta[name="twitter:data1"]').attr('content');
+
     price = parseNumericPrice(rawPrice);
 
-    // If Twitter label is "Price", verify data1 value
     if (price === null) {
       const label1 = $('meta[name="twitter:label1"]').attr('content');
       if (label1 && label1.toLowerCase().includes('price')) {
@@ -500,7 +626,6 @@ export async function scrapeProductUrl(targetUrl: string): Promise<ScrapedProduc
     }
   }
 
-  // General e-commerce price selector fallbacks (e.g. Amazon offscreen price tags)
   if (price === null) {
     const priceSelectors = [
       '.priceToPay .a-offscreen',
@@ -540,56 +665,127 @@ export async function scrapeProductUrl(targetUrl: string): Promise<ScrapedProduc
     }
   }
 
+  // Generic currency-symbol-based leaf node price fallback
+  if (price === null) {
+    const symbols = ['₹', 'rs.', '$', '£', '€'];
+    for (const sym of symbols) {
+      if (price !== null) break;
+
+      const elements = $(`span:contains("${sym}"), h1:contains("${sym}"), h2:contains("${sym}"), h3:contains("${sym}"), h4:contains("${sym}"), h5:contains("${sym}"), p:contains("${sym}"), b:contains("${sym}"), div:contains("${sym}")`);
+
+      elements.each((_, el) => {
+        const isStrikeThrough =
+          $(el).is('del, strike, s') ||
+          $(el).parents('del, strike, s').length > 0 ||
+          ($(el).attr('class') || '').toLowerCase().includes('strike') ||
+          ($(el).attr('class') || '').toLowerCase().includes('original') ||
+          ($(el).attr('class') || '').toLowerCase().includes('mrp');
+
+        if (isStrikeThrough) {
+          return;
+        }
+
+        const text = $(el).clone().children().remove().end().text().trim();
+        if (text) {
+          const val = parseNumericPrice(text);
+          if (val !== null && val > 0 && val < 1000000) {
+            price = val;
+            return false;
+          }
+        }
+      });
+    }
+  }
+
   // Currency
-  const rawCurrency = 
+  const rawCurrency =
     $('meta[property="product:price:currency"]').attr('content') ||
     $('meta[property="og:price:currency"]').attr('content');
   if (rawCurrency) {
     currency = rawCurrency.trim().toUpperCase();
   } else {
-    // Dynamically detect currency based on URL context and page text
     currency = detectCurrencyFromTextAndUrl(html, targetUrl);
   }
 
   // Store Name
   if (!storeName) {
-    storeName = 
+    storeName =
       $('meta[property="og:site_name"]').attr('content') ||
       $('meta[name="twitter:site"]').attr('content') ||
       '';
     storeName = storeName.trim();
   }
 
-  // Fallback store name from domain
   if (!storeName) {
     try {
-      const parsedUrl = new URL(targetUrl);
-      // Remove 'www.' and get domain name
-      storeName = parsedUrl.hostname.replace('www.', '');
+      storeName = new URL(targetUrl).hostname.replace('www.', '');
     } catch (_) {
       storeName = 'Online Store';
     }
   }
 
-  // Final sanitization of Image URL (ensure http/https and reject scripts/data URIs)
+  // Final sanitization of Image URL
   if (imageUrl) {
     imageUrl = imageUrl.trim();
     if (!isValidHttpUrl(imageUrl)) {
-      imageUrl = null; // Reject javascript: or data: URIs
+      imageUrl = null;
     }
   }
 
-  // If we still don't have a title, fallback to something meaningful
-  if (!title) {
-    title = 'Clipped Product';
-  }
-
   return {
-    title,
+    title: title || 'Clipped Product',
     price,
     currency,
     imageUrl,
     sourceUrl: targetUrl,
     storeName,
   };
+}
+
+export async function scrapeProductUrl(targetUrl: string): Promise<ScrapedProduct> {
+  if (!isValidHttpUrl(targetUrl)) {
+    throw new Error('Invalid target URL. Only HTTP/HTTPS URLs are supported.');
+  }
+
+  let html: string;
+  let parsedDetails: ScrapedProduct;
+
+  try {
+    html = await fetchWithRetry(targetUrl);
+    parsedDetails = parseProductDetails(html, targetUrl);
+
+    const isSkeleton =
+      !parsedDetails.title ||
+      parsedDetails.title === 'Clipped Product' ||
+      isGenericTitle(parsedDetails.title, targetUrl) ||
+      (parsedDetails.price === null && parsedDetails.imageUrl === null);
+
+    if (isSkeleton) {
+      throw new Error('Axios returned a generic skeleton page');
+    }
+  } catch (err: any) {
+    console.warn(`[Scraper] Axios failed or returned skeleton for ${targetUrl}: ${err.message}. Attempting Puppeteer fallback...`);
+    try {
+      html = await fetchWithPuppeteer(targetUrl);
+      if (isBotBlocked(html)) {
+        throw new Error("Puppeteer was also blocked by bot detection");
+      }
+      parsedDetails = parseProductDetails(html, targetUrl);
+    } catch (puppeteerErr: any) {
+      console.error(`[Scraper] All fetch attempts (Axios + Puppeteer) failed for ${targetUrl}: ${puppeteerErr.message}`);
+      const hostname = (() => {
+        try { return new URL(targetUrl).hostname.replace('www.', ''); } catch (_) { return 'Online Store'; }
+      })();
+      return {
+        title: 'Could not load product',
+        price: null,
+        currency: detectCurrencyFromTextAndUrl('', targetUrl),
+        imageUrl: null,
+        sourceUrl: targetUrl,
+        storeName: hostname,
+      };
+    }
+  }
+
+  return parsedDetails;
 }
