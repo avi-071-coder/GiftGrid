@@ -20,8 +20,12 @@ app.use(cors({
       return callback(null, true);
     }
     // Allow production CLIENT_URL if defined
-    if (process.env.CLIENT_URL && origin === process.env.CLIENT_URL) {
-      return callback(null, true);
+    if (process.env.CLIENT_URL) {
+      const cleanOrigin = origin.replace(/\/$/, '');
+      const cleanClientUrl = process.env.CLIENT_URL.replace(/\/$/, '');
+      if (cleanClientUrl === '*' || cleanOrigin === cleanClientUrl) {
+        return callback(null, true);
+      }
     }
     return callback(new Error('Not allowed by CORS'));
   },
