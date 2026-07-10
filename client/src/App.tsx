@@ -44,7 +44,7 @@ export default function App() {
     boards?: { id: string; name: string; clips: Clip[] }[];
     isOwner?: boolean;
   } | null>(null);
-  
+
   // Search State
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<{ boards: any[]; clips: Clip[] }>({ boards: [], clips: [] });
@@ -58,7 +58,7 @@ export default function App() {
   const [isClippingOpen, setIsClippingOpen] = useState(false);
   const [isNewBoardOpen, setIsNewBoardOpen] = useState(false);
   const [newBoardName, setNewBoardName] = useState('');
-  
+
   // Scraper Input & Preview States
   const [clipUrl, setClipUrl] = useState('');
   const [isScraping, setIsScraping] = useState(false);
@@ -297,7 +297,7 @@ export default function App() {
 
     // Build a fallback store name from the URL (safely)
     let fallbackStoreName = targetUrl;
-    try { fallbackStoreName = new URL(targetUrl).hostname.replace('www.', ''); } catch (_) {}
+    try { fallbackStoreName = new URL(targetUrl).hostname.replace('www.', ''); } catch (_) { }
 
     // Detect currency from URL domain for fallback
     const urlLower = targetUrl.toLowerCase();
@@ -474,7 +474,7 @@ export default function App() {
           origin: { y: 0.65 },
           colors: ['#b84c6e', '#6e8b63', '#dcae82'],
         });
-        
+
         setClaimSuccess(true);
         loadPublicData();
       } else {
@@ -607,7 +607,7 @@ export default function App() {
       </AnimatePresence>
 
       <div className={`min-h-screen px-4 pt-8 ${view !== 'public' ? 'pb-24' : 'pb-8'} md:px-12 md:pb-12 max-w-7xl mx-auto flex flex-col justify-between`}>
-        
+
         {/* --- MAIN HEADER --- */}
         <header className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-12 relative z-20">
           {/* Logo & Brand */}
@@ -653,11 +653,10 @@ export default function App() {
                   <button
                     key={tab}
                     onClick={() => { setActiveTab(tab as any); setView('home'); setSearchQuery(''); }}
-                    className={`px-3.5 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all duration-200 ${
-                      activeTab === tab && !searchQuery && view === 'home'
-                        ? 'bg-accent-yellow text-black brutal-border brutal-shadow'
-                        : 'text-text-muted-light dark:text-text-muted-dark hover:text-text-primary-light'
-                    }`}
+                    className={`px-3.5 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all duration-200 ${activeTab === tab && !searchQuery && view === 'home'
+                      ? 'bg-accent-yellow text-black brutal-border brutal-shadow'
+                      : 'text-text-muted-light dark:text-text-muted-dark hover:text-text-primary-light'
+                      }`}
                   >
                     {tab}
                   </button>
@@ -688,7 +687,7 @@ export default function App() {
         {/* --- HOME VIEW --- */}
         {view === 'home' && (
           <main className="flex-grow flex flex-col gap-12">
-            
+
 
 
             {/* If Search is Active */}
@@ -785,7 +784,7 @@ export default function App() {
                               >
                                 <Trash2 size={12} />
                               </button>
-                              
+
                               {clip.imageUrl ? (
                                 <img
                                   src={clip.imageUrl}
@@ -824,7 +823,7 @@ export default function App() {
                       <div className="flex flex-col gap-10">
                         {Object.entries(getActiveCategoriesRollup()).map(([catName, items]) => (
                           <div key={catName} className="flex flex-col gap-4">
-                            <h3 
+                            <h3
                               onClick={() => {
                                 setActiveTab('categories');
                                 setView('home');
@@ -1002,7 +1001,7 @@ export default function App() {
                         })}
                       </div>
                     )}
-                    
+
                     {/* Profile Share Management */}
                     <div className="mt-8 p-6 bg-accent-yellow rounded-2xl brutal-border brutal-shadow flex flex-col sm:flex-row items-center justify-between gap-6">
                       <div>
@@ -1185,7 +1184,7 @@ export default function App() {
                   Clip Product Link
                 </h3>
                 <p className="text-xs text-text-muted-light dark:text-text-muted-dark mb-6">
-                  Paste the product page link from any online shop (Shopify, Etsy, Amazon, custom store).
+                  Paste the product page link from an online shop
                 </p>
 
                 {/* URL Input */}
@@ -1231,7 +1230,7 @@ export default function App() {
                           No Image
                         </div>
                       )}
-                      
+
                       <div className="flex-grow flex flex-col gap-2">
                         <label className="text-[10px] font-semibold uppercase tracking-wider text-text-muted-light dark:text-text-muted-dark">
                           Image URL (Editable)
@@ -1621,15 +1620,15 @@ export default function App() {
                     <h2 className="font-serif text-3xl font-bold leading-tight mb-4 text-text-primary-light dark:text-text-primary-dark">
                       {selectedClipDetail.title}
                     </h2>
-                    
+
                     <div className="flex gap-2 flex-wrap mb-6">
-                      <span 
+                      <span
                         onClick={() => jumpToCategory(selectedClipDetail.umbrellaTag || 'Misc', selectedClipDetail.typeTag || 'Other')}
                         className="bg-neutral-200 dark:bg-neutral-800 px-3 py-1 rounded-md text-xs font-bold uppercase brutal-border cursor-pointer hover:bg-black hover:text-white dark:hover:bg-white dark:hover:text-black transition-all"
                       >
                         {selectedClipDetail.umbrellaTag || 'Misc'}
                       </span>
-                      <span 
+                      <span
                         onClick={() => jumpToCategory(selectedClipDetail.umbrellaTag || 'Misc', selectedClipDetail.typeTag || 'Other')}
                         className="bg-neutral-200 dark:bg-neutral-800 px-3 py-1 rounded-md text-xs font-bold uppercase brutal-border cursor-pointer hover:bg-black hover:text-white dark:hover:bg-white dark:hover:text-black transition-all"
                       >
@@ -1653,7 +1652,7 @@ export default function App() {
                     >
                       GET IT FROM STORE
                     </a>
-                    
+
                     {(view !== 'public' || publicData?.isOwner) ? (
                       <div className="flex gap-4 mt-2">
                         <button
@@ -1685,7 +1684,7 @@ export default function App() {
                     )}
                   </div>
                 </div>
-                
+
                 {/* Close Button */}
                 <button
                   onClick={() => setSelectedClipDetail(null)}
@@ -1704,9 +1703,9 @@ export default function App() {
             <div className="absolute inset-0 rounded-full animate-[spin_10s_linear_infinite] flex items-center justify-center">
               <svg viewBox="0 0 100 100" className="w-full h-full p-0">
                 <path id="curve" fill="transparent" d="M 50, 50 m -38, 0 a 38,38 0 1,1 76,0 a 38,38 0 1,1 -76,0" />
-                <text className="text-[10px] font-black uppercase tracking-[0.2em] fill-black dark:fill-white">
+                <text className="text-[9px] font-black uppercase tracking-[0.15em] fill-black dark:fill-white">
                   <textPath href="#curve" startOffset="0%">
-                    CLIP • COLLECT • COLLAGE • CLAIM • CLIP • COLLECT • COLLAGE • CLAIM • 
+                    • CLIP • COLLECT • COLLAGE • CLAIM • CLIP • COLLECT • COLLAGE • CLAIM
                   </textPath>
                 </text>
               </svg>
@@ -1841,11 +1840,10 @@ export default function App() {
           <div className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white dark:bg-neutral-900 border-t-2 border-black dark:border-white px-6 py-2 pb-safe flex items-center justify-between shadow-[0_-4px_0px_rgba(0,0,0,0.1)]">
             <button
               onClick={() => { setActiveTab('home'); setView('home'); setSearchQuery(''); }}
-              className={`flex flex-col items-center gap-1 text-[10px] font-bold uppercase tracking-wider ${
-                activeTab === 'home' && !searchQuery && view === 'home'
-                  ? 'text-accent-berry'
-                  : 'text-text-muted-light dark:text-text-muted-dark'
-              }`}
+              className={`flex flex-col items-center gap-1 text-[10px] font-bold uppercase tracking-wider ${activeTab === 'home' && !searchQuery && view === 'home'
+                ? 'text-accent-berry'
+                : 'text-text-muted-light dark:text-text-muted-dark'
+                }`}
             >
               <Home size={20} />
               <span>Home</span>
@@ -1853,11 +1851,10 @@ export default function App() {
 
             <button
               onClick={() => { setActiveTab('categories'); setView('home'); setSearchQuery(''); }}
-              className={`flex flex-col items-center gap-1 text-[10px] font-bold uppercase tracking-wider ${
-                activeTab === 'categories' && !searchQuery && view === 'home'
-                  ? 'text-accent-berry'
-                  : 'text-text-muted-light dark:text-text-muted-dark'
-              }`}
+              className={`flex flex-col items-center gap-1 text-[10px] font-bold uppercase tracking-wider ${activeTab === 'categories' && !searchQuery && view === 'home'
+                ? 'text-accent-berry'
+                : 'text-text-muted-light dark:text-text-muted-dark'
+                }`}
             >
               <FolderOpen size={20} />
               <span>Categories</span>
@@ -1873,11 +1870,10 @@ export default function App() {
 
             <button
               onClick={() => { setActiveTab('collections'); setView('home'); setSearchQuery(''); }}
-              className={`flex flex-col items-center gap-1 text-[10px] font-bold uppercase tracking-wider ${
-                activeTab === 'collections' && !searchQuery && view === 'home'
-                  ? 'text-accent-berry'
-                  : 'text-text-muted-light dark:text-text-muted-dark'
-              }`}
+              className={`flex flex-col items-center gap-1 text-[10px] font-bold uppercase tracking-wider ${activeTab === 'collections' && !searchQuery && view === 'home'
+                ? 'text-accent-berry'
+                : 'text-text-muted-light dark:text-text-muted-dark'
+                }`}
             >
               <Gift size={20} />
               <span>Boards</span>
