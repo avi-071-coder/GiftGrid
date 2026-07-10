@@ -14,7 +14,7 @@ import MasonryGrid from './components/MasonryGrid';
 import type { Clip } from './components/MasonryGrid';
 import ClaimModal from './components/ClaimModal';
 
-const API_BASE = 'http://localhost:3001/api/v1';
+const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:3001/api/v1';
 
 interface Board {
   id: string;
