@@ -1703,9 +1703,9 @@ export default function App() {
             <div className="absolute inset-0 rounded-full animate-[spin_10s_linear_infinite] flex items-center justify-center">
               <svg viewBox="0 0 100 100" className="w-full h-full p-0">
                 <path id="curve" fill="transparent" d="M 50, 50 m -38, 0 a 38,38 0 1,1 76,0 a 38,38 0 1,1 -76,0" />
-                <text className="text-[9px] font-black uppercase tracking-[0.15em] fill-black dark:fill-white">
+                <text className="text-[8px] font-black uppercase tracking-[0.1em] fill-black dark:fill-white">
                   <textPath href="#curve" startOffset="0%">
-                    • CLIP • COLLECT • COLLAGE • CLAIM • CLIP • COLLECT • COLLAGE • CLAIM
+                    CLIP • COLLECT • COLLAGE • CLAIM • CLIP • COLLECT • COLLAGE • CLAIM • 
                   </textPath>
                 </text>
               </svg>
