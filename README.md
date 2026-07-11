@@ -21,8 +21,7 @@ GiftGrid is a wishlist aggregation engine that focuses on core backend features 
 * **The Solution:** Added a strict normalization layer to prepend `https://` safely and resolve hostnames, ensuring clean extraction and HTTP scraping.
 
 ### B. E-Commerce Scraper Blocks & Captcha Resiliency
-* **The Issue:** Scraper blocks and captcha false-positives on major platforms.
-* **The Solution:** Configured rotating browser user-agent profiles and refined the bot-detection algorithm to only flag captchas when no product metadata could 
+* **The Issue:** Scraper blocks and captcha false-positives on major platforms. 
   
 ---
 
