@@ -11,12 +11,6 @@ GiftGrid is a wishlist aggregation engine that focuses on core backend features 
 * **Smart Currency Standardization:** Dynamically detects regional domains and formats, automatically converting and mapping prices to correct local currencies (INR for Indian e-commerce, USD as default global fallback).
 * **Fault-Tolerant Scraping Fallback:** When a site strictly blocks automated traffic (e.g., Instagram behind login screens, geofenced platforms), the system seamlessly falls back to a manual input flow, ensuring no data is ever lost.
 * **Wishlist & Board Management APIs:** Comprehensive backend support allowing users to organize clips into distinct wishlist boards, perform cross-clip searches, and manage their collections efficiently.
-
----
-
-## 2. Issues Encountered & Solutions
-
-### A. 
   
 ---
 
