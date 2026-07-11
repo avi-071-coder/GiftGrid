@@ -26,8 +26,7 @@ GiftGrid is a wishlist aggregation engine that focuses on core backend features 
 
 ### C. Stalling Classification Pipeline
 * **The Issue:** Lags in semantic AI classification endpoints stalled requests.
-* **The Solution:** Integrated a strict 5-second timeout on the classification fetch with an automatic fallback to default tags, preventing payload blockages.
-
+  
 ---
 
 ## 3. Technology Stack & Architecture
