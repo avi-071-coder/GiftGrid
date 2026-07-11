@@ -17,7 +17,6 @@ GiftGrid is a wishlist aggregation engine that focuses on core backend features 
 ## 2. Issues Encountered & Solutions
 
 ### A. Protocol-less URL Normalization
-* **The Issue:** Raw domains without `http://` or `https://` caused parsing failures.
   
 ---
 
