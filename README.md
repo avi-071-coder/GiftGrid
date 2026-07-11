@@ -16,7 +16,7 @@ GiftGrid is a wishlist aggregation engine that focuses on core backend features 
 
 ## 2. Issues Encountered & Solutions
 
-### A. Protocol-less URL Normalization
+### A. 
   
 ---
 
