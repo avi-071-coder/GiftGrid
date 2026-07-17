@@ -54,5 +54,4 @@ GiftGrid is a wishlist aggregation engine that focuses on core backend features 
 * **Cryptographically Secure Session Tokens:** Unpredictable UUIDs generated via CSPRNG.
 * **HTTP Security Headers:** Implements CSP, nosniff, DENY frame options, strict referrer policies, and HSTS.
 * **Rate Limiting:** Protects write and scrape endpoints against abuse and spam.
-* **SQL Injection Prevention:** Uses Prisma ORM parameterized statements.
-* **Secrets Management:** 
+* **SQL Injection Prevention:** Uses Prisma ORM parameterized statements. 
