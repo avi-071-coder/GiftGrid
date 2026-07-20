@@ -2,12 +2,28 @@ import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import { v4 as uuidv4 } from 'uuid';
+import multer from 'multer';
 import { prisma } from './db';
 import { scrapeProductUrl } from './scraper';
 import { classifyProduct } from './classifier';
 import { extractCanonicalKey } from './canonical';
 import { scrapeQueue, setupRecurringJobs } from './queue';
+import { extractFromScreenshot } from './vision';
 import './workers';
+
+// Multer: in-memory storage, 4 MB limit, images only
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 4 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    const ALLOWED = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+    if (ALLOWED.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only image files are accepted (JPEG, PNG, WebP, GIF).'));
+    }
+  },
+});
 
 dotenv.config();
 
@@ -102,8 +118,9 @@ function rateLimiter(limit: number, windowMs: number) {
 }
 
 // Specific rate limit instances
-const scrapeLimiter = rateLimiter(15, 60 * 1000); // Max 15 scrapes per minute
-const writeLimiter = rateLimiter(60, 60 * 1000);  // Max 60 writes per minute
+const scrapeLimiter = rateLimiter(15, 60 * 1000);       // Max 15 scrapes per minute
+const writeLimiter = rateLimiter(60, 60 * 1000);        // Max 60 writes per minute
+const screenshotLimiter = rateLimiter(5, 60 * 1000);   // Max 5 screenshot analyses per minute (vision API cost)
 
 // Middleware to establish silent anonymous session token
 async function sessionMiddleware(req: AuthenticatedRequest, res: Response, next: NextFunction) {
@@ -379,9 +396,52 @@ app.get('/api/v1/clips', async (req: AuthenticatedRequest, res: Response) => {
   }
 });
 
+// Screenshot-Assisted Fallback: Upload screenshot → Groq Vision → returns pre-fill data (does NOT save clip)
+app.post(
+  '/api/v1/clips/screenshot-fallback',
+  screenshotLimiter,
+  (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    upload.single('screenshot')(req, res, (err) => {
+      if (err instanceof multer.MulterError && err.code === 'LIMIT_FILE_SIZE') {
+        return res.status(413).json({ error: 'Image too large. Maximum allowed size is 4 MB.' });
+      }
+      if (err) {
+        return res.status(400).json({ error: err.message });
+      }
+      next();
+    });
+  },
+  async (req: AuthenticatedRequest, res: Response) => {
+    const ownerId = req.anonIdentity?.id;
+    if (!ownerId) return res.status(401).json({ error: 'Session not established.' });
+
+    if (!req.file) {
+      return res.status(400).json({ error: 'No screenshot uploaded. Include a file field named "screenshot".' });
+    }
+
+    try {
+      const imageBase64 = req.file.buffer.toString('base64');
+      const mimeType = req.file.mimetype;
+
+      const result = await extractFromScreenshot(imageBase64, mimeType);
+
+      // Also include the screenshot as a data URL so the client can display it as the clip image
+      const screenshotDataUrl = `data:${mimeType};base64,${imageBase64}`;
+
+      return res.status(200).json({
+        ...result,
+        screenshotDataUrl,
+      });
+    } catch (err: any) {
+      console.error('[ScreenshotFallback] Groq vision error:', err.message);
+      return res.status(502).json({ error: 'Vision extraction failed. Please try entering details manually.' });
+    }
+  }
+);
+
 // Create a new clip
 app.post('/api/v1/clips', async (req: AuthenticatedRequest, res: Response) => {
-  const { boardId, url, forceAdd, title, price, currency, imageUrl, sourceUrl, storeName, umbrellaTag, typeTag } = req.body;
+  const { boardId, url, forceAdd, title, price, currency, imageUrl, sourceUrl, storeName, umbrellaTag, typeTag, source } = req.body;
   const ownerId = req.anonIdentity?.id;
 
   const targetUrl = url || sourceUrl;
@@ -457,7 +517,8 @@ app.post('/api/v1/clips', async (req: AuthenticatedRequest, res: Response) => {
         umbrellaTag: umbrellaTag ? escapeHtml(umbrellaTag.trim()) : 'Leisure',
         typeTag: typeTag ? escapeHtml(typeTag.trim()) : 'Other',
         canonicalKey,
-        status: 'SUCCESS'
+        status: 'SUCCESS',
+        source: ['auto', 'manual', 'screenshot_ai'].includes(source) ? source : 'auto',
       },
     });
 
