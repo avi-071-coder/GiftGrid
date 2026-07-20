@@ -1240,8 +1240,14 @@ export default function App() {
                 </p>
 
                 {/* URL Input */}
-                {isScreenshotMode ? (
+                {isScreenshotMode || (scrapeFailed && !scrapedPreview) ? (
                   <div className="flex flex-col gap-5">
+                    {scrapeFailed && (
+                      <div className="p-3.5 rounded-xl bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-center">
+                        <p className="text-sm font-semibold text-red-700 dark:text-red-300">Could not fetch details from this URL</p>
+                        <p className="text-xs text-red-500 dark:text-red-400 mt-0.5">Please upload a screenshot of the product page to extract details automatically.</p>
+                      </div>
+                    )}
                     {isAnalyzingScreenshot ? (
                       <div className="flex flex-col items-center gap-4 py-10">
                         <div className="w-10 h-10 rounded-full border-4 border-accent-berry border-t-transparent animate-spin" />
@@ -1261,29 +1267,34 @@ export default function App() {
                           <p className="text-xs text-text-muted-light dark:text-text-muted-dark mt-1">JPEG, PNG, WebP or GIF · Max 4 MB</p>
                           <p className="text-xs text-text-muted-light dark:text-text-muted-dark mt-2 italic">Make sure the product title and price are clearly visible</p>
                         </div>
-                        <button onClick={() => setIsScreenshotMode(false)} className="w-full px-4 py-2.5 rounded-xl border border-neutral-200 dark:border-neutral-800 hover:bg-neutral-100 dark:hover:bg-neutral-800 text-sm font-medium transition-colors">← Back</button>
+                        <div className="flex gap-3">
+                          <button
+                            onClick={() => { setIsScreenshotMode(false); setScrapeFailed(false); }}
+                            className="flex-1 px-4 py-2.5 rounded-xl border border-neutral-200 dark:border-neutral-800 hover:bg-neutral-100 dark:hover:bg-neutral-800 text-sm font-medium transition-colors"
+                          >
+                            ← Back to Link
+                          </button>
+                          <button
+                            onClick={() => {
+                              setScrapeFailed(false);
+                              setScrapedPreview({
+                                title: 'Clipped Product',
+                                price: null,
+                                currency: 'USD',
+                                imageUrl: null,
+                                sourceUrl: clipUrl || 'https://example.com',
+                                storeName: 'Online Store',
+                                umbrellaTag: 'Leisure',
+                                typeTag: 'Other'
+                              });
+                            }}
+                            className="flex-1 px-4 py-2.5 rounded-xl border border-neutral-200 dark:border-neutral-800 hover:bg-neutral-100 dark:hover:bg-neutral-800 text-sm font-medium transition-colors"
+                          >
+                            ✏️ Enter Manually
+                          </button>
+                        </div>
                       </>
                     )}
-                  </div>
-                ) : scrapeFailed && !scrapedPreview ? (
-                  <div className="flex flex-col gap-4">
-                    <div className="p-4 rounded-2xl bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-center">
-                      <p className="text-sm font-semibold text-red-700 dark:text-red-300">Couldn't auto-extract this URL</p>
-                      <p className="text-xs text-red-500 dark:text-red-400 mt-1">The site may be blocking automated requests.</p>
-                    </div>
-                    <p className="text-xs text-center text-text-muted-light dark:text-text-muted-dark">How would you like to continue?</p>
-                    <div className="grid grid-cols-2 gap-3">
-                      <button onClick={() => setIsScreenshotMode(true)} className="flex flex-col items-center gap-2 p-4 rounded-2xl border-2 border-neutral-200 dark:border-neutral-700 hover:border-accent-berry bg-white dark:bg-neutral-900 transition-all group">
-                        <span className="text-3xl group-hover:scale-110 transition-transform">📸</span>
-                        <span className="text-xs font-semibold text-text-primary-light dark:text-text-primary-dark">Upload Screenshot</span>
-                        <span className="text-[10px] text-text-muted-light dark:text-text-muted-dark text-center">AI reads title & price for you</span>
-                      </button>
-                      <button onClick={() => { setScrapeFailed(false); setScrapedPreview({ title: 'Clipped Product', price: null, currency: 'USD', imageUrl: null, sourceUrl: clipUrl || 'https://example.com', storeName: 'Online Store', umbrellaTag: 'Leisure', typeTag: 'Other' }); }} className="flex flex-col items-center gap-2 p-4 rounded-2xl border-2 border-neutral-200 dark:border-neutral-700 hover:border-accent-berry bg-white dark:bg-neutral-900 transition-all group">
-                        <span className="text-3xl group-hover:scale-110 transition-transform">✏️</span>
-                        <span className="text-xs font-semibold text-text-primary-light dark:text-text-primary-dark">Enter Manually</span>
-                        <span className="text-[10px] text-text-muted-light dark:text-text-muted-dark text-center">Type the details yourself</span>
-                      </button>
-                    </div>
                   </div>
                 ) : scrapedPreview ? (
                   <div className="flex flex-col gap-5">
