@@ -321,7 +321,12 @@ export default function App() {
 
       if (res.ok) {
         const data = await res.json();
-        setScrapedPreview(data);
+        if (data.title === 'Could not load product') {
+          setScrapeFailed(true);
+          triggerToast('Could not fetch details. Please upload a screenshot.');
+        } else {
+          setScrapedPreview(data);
+        }
       } else {
         setScrapeFailed(true);
         triggerToast('Could not auto-detect details. Upload a screenshot or enter manually.');
@@ -1244,7 +1249,7 @@ export default function App() {
                   <div className="flex flex-col gap-5">
                     {scrapeFailed && (
                       <div className="p-3.5 rounded-xl bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-center">
-                        <p className="text-sm font-semibold text-red-700 dark:text-red-300">Could not fetch details from this URL</p>
+                        <p className="text-sm font-semibold text-red-700 dark:text-red-300">Could not fetch the details</p>
                         <p className="text-xs text-red-500 dark:text-red-400 mt-0.5">Please upload a screenshot of the product page to extract details automatically.</p>
                       </div>
                     )}
@@ -1263,7 +1268,7 @@ export default function App() {
                         >
                           <input id="screenshot-file-input" type="file" accept="image/jpeg,image/png,image/webp,image/gif" className="hidden" onChange={(e) => { const file = e.target.files?.[0]; if (file) handleScreenshotUpload(file); }} />
                           <div className="text-4xl mb-3">📸</div>
-                          <p className="text-sm font-semibold text-text-primary-light dark:text-text-primary-dark">Click or drag & drop a screenshot</p>
+                          <p className="text-sm font-semibold text-text-primary-light dark:text-text-primary-dark">Upload and save your product details here (Click and we do)</p>
                           <p className="text-xs text-text-muted-light dark:text-text-muted-dark mt-1">JPEG, PNG, WebP or GIF · Max 4 MB</p>
                           <p className="text-xs text-text-muted-light dark:text-text-muted-dark mt-2 italic">Make sure the product title and price are clearly visible</p>
                         </div>
