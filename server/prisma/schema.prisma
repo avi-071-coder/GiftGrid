@@ -42,11 +42,15 @@ model Clip {
   storeName   String
   umbrellaTag String
   typeTag     String
+  status      String       @default("SUCCESS") // "PENDING", "SUCCESS", "FAILED"
   createdAt   DateTime     @default(now())
   claim       Claim?
+  canonicalKey String      @default("")
+  priceHistory PriceHistory[]
 
   @@index([boardId])
   @@index([ownerId])
+  @@index([boardId, canonicalKey])
 }
 
 model Claim {
@@ -64,4 +68,26 @@ model ProfileShare {
   shareToken String       @unique
   createdAt  DateTime     @default(now())
   revokedAt  DateTime?
+}
+
+model PriceHistory {
+  id         String   @id @default(uuid())
+  clipId     String
+  clip       Clip     @relation(fields: [clipId], references: [id], onDelete: Cascade)
+  price      Float
+  currency   String
+  capturedAt DateTime @default(now())
+
+  @@index([clipId, capturedAt])
+}
+
+model Notification {
+  id         String   @id @default(uuid())
+  userId     String   // scoped by ownerId, same as existing IDOR pattern
+  clipId     String
+  type       String   // "price_drop" | "price_increase" | "back_in_stock" | "out_of_stock" | "check_failed"
+  oldPrice   Float?
+  newPrice   Float?
+  read       Boolean  @default(false)
+  createdAt  DateTime @default(now())
 }
