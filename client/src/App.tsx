@@ -301,13 +301,7 @@ export default function App() {
     setIsScraping(true);
     setScrapedPreview(null);
 
-    // Build a fallback store name from the URL (safely)
-    let fallbackStoreName = targetUrl;
-    try { fallbackStoreName = new URL(targetUrl).hostname.replace('www.', ''); } catch (_) { }
 
-    // Detect currency from URL domain for fallback
-    const urlLower = targetUrl.toLowerCase();
-    const fallbackCurrency = urlLower.includes('.in') || urlLower.includes('flipkart') || urlLower.includes('myntra') || urlLower.includes('amazon.in') ? 'INR' : 'USD';
 
     try {
       // Use AbortController to enforce a 30-second client-side timeout
@@ -329,33 +323,11 @@ export default function App() {
         const data = await res.json();
         setScrapedPreview(data);
       } else {
-        // Server returned an error — enter editable fallback mode
-        setScrapedPreview({
-          title: 'Clipped Product',
-          price: null,
-          currency: fallbackCurrency,
-          imageUrl: null,
-          sourceUrl: targetUrl,
-          storeName: fallbackStoreName,
-          umbrellaTag: 'Leisure',
-          typeTag: 'Other',
-        });
         setScrapeFailed(true);
-        triggerToast('Could not auto-detect details. Upload a screenshot or edit below.');
+        triggerToast('Could not auto-detect details. Upload a screenshot or enter manually.');
       }
     } catch (err: any) {
       console.error('[Scrape Error]', err);
-      // Network failure / timeout — still enter edit mode instead of dead-ending
-      setScrapedPreview({
-        title: 'Clipped Product',
-        price: null,
-        currency: fallbackCurrency,
-        imageUrl: null,
-        sourceUrl: targetUrl,
-        storeName: fallbackStoreName,
-        umbrellaTag: 'Leisure',
-        typeTag: 'Other',
-      });
       setScrapeFailed(true);
       if (err.name === 'AbortError') {
         triggerToast('Request timed out. Upload a screenshot or fill details manually.');
@@ -1372,6 +1344,20 @@ export default function App() {
                       />
                     </div>
 
+                    {/* Product URL */}
+                    <div>
+                      <label className="block text-xs font-semibold text-text-primary-light dark:text-text-primary-dark mb-1">
+                        Product URL / Link
+                      </label>
+                      <input
+                        type="url"
+                        value={scrapedPreview.sourceUrl || ''}
+                        onChange={(e) => setScrapedPreview({ ...scrapedPreview, sourceUrl: e.target.value })}
+                        placeholder="https://store.com/product/..."
+                        className="w-full px-4 py-2.5 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white/50 dark:bg-neutral-900/50 text-sm focus:outline-none focus:ring-1 focus:ring-accent-berry"
+                      />
+                    </div>
+
                     {/* Price & Currency & Store */}
                     <div className="grid grid-cols-3 gap-3">
                       <div>
@@ -1468,6 +1454,15 @@ export default function App() {
                         ) : (
                           'Fetch'
                         )}
+                      </button>
+                    </div>
+                    <div className="text-center mt-1">
+                      <button
+                        type="button"
+                        onClick={() => setIsScreenshotMode(true)}
+                        className="text-xs font-semibold text-accent-berry hover:text-accent-berryHover hover:underline transition-all"
+                      >
+                        Not able to fetch your product? Upload & save it yourself here
                       </button>
                     </div>
                   </div>
