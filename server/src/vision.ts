@@ -1,5 +1,3 @@
-import Groq from 'groq-sdk';
-
 export interface VisionResult {
   title: string | null;
   price: number | null;
@@ -7,7 +5,7 @@ export interface VisionResult {
   confidence: 'high' | 'medium' | 'low';
 }
 
-const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions';
 
 const SYSTEM_PROMPT = `You extract structured product information from a screenshot of an e-commerce product page.
 Read the visible title, current price, and currency from the image.
@@ -24,36 +22,49 @@ Respond ONLY with JSON, no other text, in this exact shape:
 If a field isn't clearly visible in the image, return null for it rather than guessing.`;
 
 export async function extractFromScreenshot(imageBase64: string, mimeType: string): Promise<VisionResult> {
-  const response = await groq.chat.completions.create({
-    model: 'meta-llama/llama-4-scout-17b-16e-instruct',
-    messages: [
-      {
-        role: 'system',
-        content: SYSTEM_PROMPT,
-      },
-      {
-        role: 'user',
-        content: [
-          {
-            type: 'image_url',
-            image_url: {
-              url: `data:${mimeType};base64,${imageBase64}`,
+  const response = await fetch(GROQ_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${process.env.GROQ_API_KEY}`,
+    },
+    body: JSON.stringify({
+      model: 'meta-llama/llama-4-scout-17b-16e-instruct',
+      temperature: 0.1,
+      max_tokens: 256,
+      messages: [
+        {
+          role: 'system',
+          content: SYSTEM_PROMPT,
+        },
+        {
+          role: 'user',
+          content: [
+            {
+              type: 'image_url',
+              image_url: {
+                url: `data:${mimeType};base64,${imageBase64}`,
+              },
             },
-          },
-          {
-            type: 'text',
-            text: 'Extract the product title, price, and currency from this screenshot.',
-          },
-        ],
-      },
-    ],
-    temperature: 0.1,
-    max_tokens: 256,
+            {
+              type: 'text',
+              text: 'Extract the product title, price, and currency from this screenshot.',
+            },
+          ],
+        },
+      ],
+    }),
   });
 
-  const raw = response.choices[0]?.message?.content?.trim() || '';
+  if (!response.ok) {
+    const errText = await response.text();
+    throw new Error(`Groq vision API error ${response.status}: ${errText}`);
+  }
 
-  // Strip any markdown fences if model wraps response
+  const json = await response.json();
+  const raw: string = json.choices?.[0]?.message?.content?.trim() || '';
+
+  // Strip any markdown fences the model may wrap the JSON in
   const cleaned = raw.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '').trim();
 
   try {
@@ -65,7 +76,6 @@ export async function extractFromScreenshot(imageBase64: string, mimeType: strin
       confidence: ['high', 'medium', 'low'].includes(parsed.confidence) ? parsed.confidence : 'low',
     };
   } catch {
-    // JSON parse failed — return nulls with low confidence
     console.error('[Vision] Failed to parse Groq response:', raw);
     return { title: null, price: null, currency: null, confidence: 'low' };
   }
