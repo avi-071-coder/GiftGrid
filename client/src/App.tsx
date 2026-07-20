@@ -1268,33 +1268,7 @@ export default function App() {
                 </p>
 
                 {/* URL Input */}
-                {!scrapedPreview ? (
-                  <div className="flex flex-col gap-4">
-                    <div className="flex gap-2">
-                      <input
-                        type="url"
-                        value={clipUrl}
-                        onChange={(e) => setClipUrl(e.target.value)}
-                        placeholder="https://store.com/product/..."
-                        className="flex-grow px-4 py-3 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white/50 dark:bg-neutral-900/50 text-sm focus:outline-none focus:ring-1 focus:ring-accent-berry"
-                        disabled={isScraping}
-                      />
-                      <button
-                        onClick={() => handleScrapeUrl()}
-                        disabled={isScraping || !clipUrl}
-                        className="px-5 py-3 rounded-xl bg-accent-berry hover:bg-accent-berryHover disabled:opacity-50 text-white font-medium text-sm flex items-center gap-1.5 transition-colors"
-                      >
-                        {isScraping ? (
-                          <>
-                            <RefreshCw size={14} className="animate-spin" /> Scraping...
-                          </>
-                        ) : (
-                          'Fetch'
-                        )}
-                      </button>
-                    </div>
-                  </div>
-                ) : isScreenshotMode ? (
+                {isScreenshotMode ? (
                   <div className="flex flex-col gap-5">
                     {isAnalyzingScreenshot ? (
                       <div className="flex flex-col items-center gap-4 py-10">
@@ -1319,7 +1293,7 @@ export default function App() {
                       </>
                     )}
                   </div>
-                ) : scrapeFailed ? (
+                ) : scrapeFailed && !scrapedPreview ? (
                   <div className="flex flex-col gap-4">
                     <div className="p-4 rounded-2xl bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-center">
                       <p className="text-sm font-semibold text-red-700 dark:text-red-300">Couldn't auto-extract this URL</p>
@@ -1468,6 +1442,32 @@ export default function App() {
                         className="flex-1 px-4 py-2.5 rounded-xl bg-accent-berry hover:bg-accent-berryHover text-white text-sm font-medium transition-colors shadow-sm"
                       >
                         Save to Wishlist
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex flex-col gap-4">
+                    <div className="flex gap-2">
+                      <input
+                        type="url"
+                        value={clipUrl}
+                        onChange={(e) => setClipUrl(e.target.value)}
+                        placeholder="https://store.com/product/..."
+                        className="flex-grow px-4 py-3 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white/50 dark:bg-neutral-900/50 text-sm focus:outline-none focus:ring-1 focus:ring-accent-berry"
+                        disabled={isScraping}
+                      />
+                      <button
+                        onClick={() => handleScrapeUrl()}
+                        disabled={isScraping || !clipUrl}
+                        className="px-5 py-3 rounded-xl bg-accent-berry hover:bg-accent-berryHover disabled:opacity-50 text-white font-medium text-sm flex items-center gap-1.5 transition-colors"
+                      >
+                        {isScraping ? (
+                          <>
+                            <RefreshCw size={14} className="animate-spin" /> Scraping...
+                          </>
+                        ) : (
+                          'Fetch'
+                        )}
                       </button>
                     </div>
                   </div>
