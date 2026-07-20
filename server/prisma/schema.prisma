@@ -43,6 +43,7 @@ model Clip {
   umbrellaTag String
   typeTag     String
   status      String       @default("SUCCESS") // "PENDING", "SUCCESS", "FAILED"
+  source      String       @default("auto")    // "auto" | "manual" | "screenshot_ai"
   createdAt   DateTime     @default(now())
   claim       Claim?
   canonicalKey String      @default("")
