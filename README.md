@@ -78,7 +78,7 @@ flowchart TB
    PORT=3001
    DATABASE_URL="postgresql://user:password@localhost:5432/giftgrid"
    GROQ_API_KEY="your_groq_api_key_here"
-   # Optional: 
+   
    REDIS_URL="redis://localhost:6379"
    ```
 4. `npx prisma migrate dev`
