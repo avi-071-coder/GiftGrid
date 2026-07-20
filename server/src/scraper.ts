@@ -235,18 +235,20 @@ async function fetchWithRetry(targetUrl: string, maxRetries = 2): Promise<string
         decompress: true,
       });
 
+      const html = typeof response.data === 'string' ? response.data : String(response.data);
+
       // If HTTP status is not 200, we treat it as blocked/failed
       if (response.status !== 200) {
-        console.warn(`[Scraper] Non-200 status code (${response.status}) on attempt ${attempt + 1}`);
+        console.warn(`[Scraper] Non-200 status code (${response.status}) on attempt ${attempt + 1} for ${targetUrl}`);
+        console.warn(`[Scraper-Diagnostic] Status: ${response.status} | Length: ${html.length} | Body Snippet: ${html.substring(0, 500).replace(/\\n/g, ' ')}`);
         lastError = new Error(`HTTP status ${response.status}`);
         continue;
       }
 
-      const html = typeof response.data === 'string' ? response.data : String(response.data);
-
       // Check if we got blocked by bot detection
       if (isBotBlocked(html)) {
         console.warn(`[Scraper] Bot-blocked on attempt ${attempt + 1} for ${targetUrl}`);
+        console.warn(`[Scraper-Diagnostic] Status: ${response.status} | Length: ${html.length} | Body Snippet: ${html.substring(0, 500).replace(/\\n/g, ' ')}`);
         lastError = new Error('Bot detection triggered');
         continue; // Retry with different UA
       }
@@ -254,6 +256,7 @@ async function fetchWithRetry(targetUrl: string, maxRetries = 2): Promise<string
       // Check if we got an actual page with meaningful content (not an empty/minimal error page)
       if (html.length < 500) {
         console.warn(`[Scraper] Suspiciously short response (${html.length} chars) on attempt ${attempt + 1}`);
+        console.warn(`[Scraper-Diagnostic] Status: ${response.status} | Length: ${html.length} | Body Snippet: ${html.substring(0, 500).replace(/\\n/g, ' ')}`);
         lastError = new Error('Response too short');
         continue;
       }
