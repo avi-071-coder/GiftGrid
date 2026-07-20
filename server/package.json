@@ -16,10 +16,12 @@
     "@prisma/client": "^5.12.1",
     "@sparticuz/chromium": "^149.0.0",
     "axios": "^1.6.8",
+    "bullmq": "^5.80.9",
     "cheerio": "^1.0.0-rc.12",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
+    "ioredis": "^5.11.1",
     "puppeteer-core": "^25.3.0",
     "uuid": "^9.0.1"
   },
