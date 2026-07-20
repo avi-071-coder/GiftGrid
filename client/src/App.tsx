@@ -92,6 +92,12 @@ export default function App() {
   // Legal Document Modals State
   const [activeLegalDoc, setActiveLegalDoc] = useState<'privacy' | 'terms' | null>(null);
 
+  // Screenshot fallback states
+  const [isScreenshotMode, setIsScreenshotMode] = useState(false);
+  const [isAnalyzingScreenshot, setIsAnalyzingScreenshot] = useState(false);
+  const [screenshotConfidence, setScreenshotConfidence] = useState<'high' | 'medium' | 'low' | null>(null);
+  const [scrapeFailed, setScrapeFailed] = useState(false);
+
   // Trigger brief alert toast
   const triggerToast = (msg: string) => {
     setToastMessage(msg);
@@ -334,7 +340,8 @@ export default function App() {
           umbrellaTag: 'Leisure',
           typeTag: 'Other',
         });
-        triggerToast('Could not auto-detect details. You can edit them below.');
+        setScrapeFailed(true);
+        triggerToast('Could not auto-detect details. Upload a screenshot or edit below.');
       }
     } catch (err: any) {
       console.error('[Scrape Error]', err);
@@ -349,19 +356,88 @@ export default function App() {
         umbrellaTag: 'Leisure',
         typeTag: 'Other',
       });
+      setScrapeFailed(true);
       if (err.name === 'AbortError') {
-        triggerToast('Request timed out. You can fill details manually.');
+        triggerToast('Request timed out. Upload a screenshot or fill details manually.');
       } else {
-        triggerToast('Could not reach server. You can fill details manually.');
+        triggerToast('Could not reach server. Upload a screenshot or fill details manually.');
       }
     } finally {
       setIsScraping(false);
     }
   };
 
+  // Handle screenshot upload and Groq vision extraction
+  const handleScreenshotUpload = async (file: File) => {
+    setIsAnalyzingScreenshot(true);
+    setScreenshotConfidence(null);
+
+    let targetUrl = clipUrl.trim();
+    if (targetUrl && !/^https?:\/\//i.test(targetUrl)) targetUrl = 'https://' + targetUrl;
+
+    let fallbackStoreName = targetUrl || 'Online Store';
+    try { if (targetUrl) fallbackStoreName = new URL(targetUrl).hostname.replace('www.', ''); } catch (_) {}
+    const urlLower = targetUrl.toLowerCase();
+    const fallbackCurrency = urlLower.includes('.in') || urlLower.includes('flipkart') || urlLower.includes('myntra') ? 'INR' : 'USD';
+
+    try {
+      const form = new FormData();
+      form.append('screenshot', file);
+
+      const res = await fetch(`${API_BASE}/clips/screenshot-fallback`, {
+        method: 'POST',
+        body: form,
+        credentials: 'include',
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        setScreenshotConfidence(data.confidence);
+        setScrapedPreview({
+          title: data.title || 'Clipped Product',
+          price: data.price ?? null,
+          currency: data.currency || fallbackCurrency,
+          imageUrl: data.screenshotDataUrl || null,
+          sourceUrl: targetUrl || 'https://example.com',
+          storeName: fallbackStoreName,
+          umbrellaTag: 'Leisure',
+          typeTag: 'Other',
+        });
+        setIsScreenshotMode(false);
+        if (data.confidence === 'low') {
+          triggerToast('⚠️ AI confidence is low — double-check the values before saving.');
+        } else {
+          triggerToast('Screenshot analysed! Review the details below.');
+        }
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        triggerToast(errData.error || 'Screenshot analysis failed. Enter details manually.');
+        // Fall through to manual mode
+        setIsScreenshotMode(false);
+        setScrapedPreview({
+          title: 'Clipped Product',
+          price: null,
+          currency: fallbackCurrency,
+          imageUrl: null,
+          sourceUrl: targetUrl || 'https://example.com',
+          storeName: fallbackStoreName,
+          umbrellaTag: 'Leisure',
+          typeTag: 'Other',
+        });
+      }
+    } catch (err: any) {
+      console.error('[Screenshot]', err);
+      triggerToast('Network error during screenshot analysis.');
+    } finally {
+      setIsAnalyzingScreenshot(false);
+    }
+  };
+
   const handleSaveClip = async () => {
     if (!scrapedPreview) return;
     const boardId = selectedBoardIdForClip || null;
+    // Determine source: if screenshot confidence was set, it's screenshot_ai; if scrapeFailed, manual; else auto
+    const source = screenshotConfidence !== null ? 'screenshot_ai' : (scrapeFailed ? 'manual' : 'auto');
 
     try {
       const res = await fetch(`${API_BASE}/clips`, {
@@ -370,6 +446,7 @@ export default function App() {
         body: JSON.stringify({
           boardId,
           ...scrapedPreview,
+          source,
         }),
         credentials: 'include',
       });
@@ -379,6 +456,9 @@ export default function App() {
         setClipUrl('');
         setScrapedPreview(null);
         setIsClippingOpen(false);
+        setScrapeFailed(false);
+        setScreenshotConfidence(null);
+        setIsScreenshotMode(false);
         fetchBoards();
         fetchClips();
         fetchRecentClips();
@@ -1214,9 +1294,69 @@ export default function App() {
                       </button>
                     </div>
                   </div>
-                ) : (
-                  // Scraped Preview & Editing fields
+                ) : isScreenshotMode ? (
                   <div className="flex flex-col gap-5">
+                    {isAnalyzingScreenshot ? (
+                      <div className="flex flex-col items-center gap-4 py-10">
+                        <div className="w-10 h-10 rounded-full border-4 border-accent-berry border-t-transparent animate-spin" />
+                        <p className="text-sm text-text-muted-light dark:text-text-muted-dark">Analysing screenshot with AI...</p>
+                      </div>
+                    ) : (
+                      <>
+                        <div
+                          className="relative border-2 border-dashed border-neutral-300 dark:border-neutral-700 rounded-2xl p-8 text-center cursor-pointer hover:border-accent-berry transition-colors"
+                          onClick={() => document.getElementById('screenshot-file-input')?.click()}
+                          onDragOver={(e) => e.preventDefault()}
+                          onDrop={(e) => { e.preventDefault(); const file = e.dataTransfer.files[0]; if (file) handleScreenshotUpload(file); }}
+                        >
+                          <input id="screenshot-file-input" type="file" accept="image/jpeg,image/png,image/webp,image/gif" className="hidden" onChange={(e) => { const file = e.target.files?.[0]; if (file) handleScreenshotUpload(file); }} />
+                          <div className="text-4xl mb-3">📸</div>
+                          <p className="text-sm font-semibold text-text-primary-light dark:text-text-primary-dark">Click or drag & drop a screenshot</p>
+                          <p className="text-xs text-text-muted-light dark:text-text-muted-dark mt-1">JPEG, PNG, WebP or GIF · Max 4 MB</p>
+                          <p className="text-xs text-text-muted-light dark:text-text-muted-dark mt-2 italic">Make sure the product title and price are clearly visible</p>
+                        </div>
+                        <button onClick={() => setIsScreenshotMode(false)} className="w-full px-4 py-2.5 rounded-xl border border-neutral-200 dark:border-neutral-800 hover:bg-neutral-100 dark:hover:bg-neutral-800 text-sm font-medium transition-colors">← Back</button>
+                      </>
+                    )}
+                  </div>
+                ) : scrapeFailed ? (
+                  <div className="flex flex-col gap-4">
+                    <div className="p-4 rounded-2xl bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-center">
+                      <p className="text-sm font-semibold text-red-700 dark:text-red-300">Couldn't auto-extract this URL</p>
+                      <p className="text-xs text-red-500 dark:text-red-400 mt-1">The site may be blocking automated requests.</p>
+                    </div>
+                    <p className="text-xs text-center text-text-muted-light dark:text-text-muted-dark">How would you like to continue?</p>
+                    <div className="grid grid-cols-2 gap-3">
+                      <button onClick={() => setIsScreenshotMode(true)} className="flex flex-col items-center gap-2 p-4 rounded-2xl border-2 border-neutral-200 dark:border-neutral-700 hover:border-accent-berry bg-white dark:bg-neutral-900 transition-all group">
+                        <span className="text-3xl group-hover:scale-110 transition-transform">📸</span>
+                        <span className="text-xs font-semibold text-text-primary-light dark:text-text-primary-dark">Upload Screenshot</span>
+                        <span className="text-[10px] text-text-muted-light dark:text-text-muted-dark text-center">AI reads title & price for you</span>
+                      </button>
+                      <button onClick={() => { setScrapeFailed(false); setScrapedPreview({ title: 'Clipped Product', price: null, currency: 'USD', imageUrl: null, sourceUrl: clipUrl || 'https://example.com', storeName: 'Online Store', umbrellaTag: 'Leisure', typeTag: 'Other' }); }} className="flex flex-col items-center gap-2 p-4 rounded-2xl border-2 border-neutral-200 dark:border-neutral-700 hover:border-accent-berry bg-white dark:bg-neutral-900 transition-all group">
+                        <span className="text-3xl group-hover:scale-110 transition-transform">✏️</span>
+                        <span className="text-xs font-semibold text-text-primary-light dark:text-text-primary-dark">Enter Manually</span>
+                        <span className="text-[10px] text-text-muted-light dark:text-text-muted-dark text-center">Type the details yourself</span>
+                      </button>
+                    </div>
+                  </div>
+                ) : scrapedPreview ? (
+                  <div className="flex flex-col gap-5">
+                    {screenshotConfidence === 'low' && (
+                      <div className="flex items-start gap-2.5 p-3 rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-300 dark:border-amber-700">
+                        <span className="text-amber-600 dark:text-amber-400 text-lg leading-none">⚠️</span>
+                        <p className="text-xs text-amber-800 dark:text-amber-300 font-medium">
+                          AI confidence is <strong>low</strong> — the screenshot may be unclear or cropped. Please double-check all values before saving.
+                        </p>
+                      </div>
+                    )}
+                    {screenshotConfidence === 'medium' && (
+                      <div className="flex items-start gap-2.5 p-3 rounded-xl bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700">
+                        <span className="text-blue-500 text-lg leading-none">ℹ️</span>
+                        <p className="text-xs text-blue-700 dark:text-blue-300 font-medium">
+                          AI pre-filled these values from your screenshot — verify prices and currency before saving.
+                        </p>
+                      </div>
+                    )}
                     {/* Image Preview & Editor */}
                     <div className="flex gap-4 p-4 rounded-2xl bg-neutral-50/50 dark:bg-neutral-900/20 border border-neutral-200/30 dark:border-neutral-800/30">
                       {scrapedPreview.imageUrl ? (
