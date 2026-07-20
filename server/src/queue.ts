@@ -2,7 +2,7 @@ import { Queue } from 'bullmq';
 import IORedis from 'ioredis';
 
 export interface IQueue {
-  add(name: string, data: any, opts?: any): Promise<void>;
+  add(name: string, data: any, opts?: any): Promise<any>;
 }
 
 export let scrapeQueue: IQueue;
