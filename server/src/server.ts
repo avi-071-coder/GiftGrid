@@ -5,6 +5,9 @@ import { v4 as uuidv4 } from 'uuid';
 import { prisma } from './db';
 import { scrapeProductUrl } from './scraper';
 import { classifyProduct } from './classifier';
+import { extractCanonicalKey } from './canonical';
+import { scrapeQueue, setupRecurringJobs } from './queue';
+import './workers';
 
 dotenv.config();
 
@@ -378,11 +381,13 @@ app.get('/api/v1/clips', async (req: AuthenticatedRequest, res: Response) => {
 
 // Create a new clip
 app.post('/api/v1/clips', async (req: AuthenticatedRequest, res: Response) => {
-  const { boardId, title, price, currency, imageUrl, sourceUrl, storeName, umbrellaTag, typeTag } = req.body;
+  const { boardId, url, forceAdd, title, price, currency, imageUrl, sourceUrl, storeName, umbrellaTag, typeTag } = req.body;
   const ownerId = req.anonIdentity?.id;
 
-  if (!title || !sourceUrl) {
-    return res.status(400).json({ error: 'title and sourceUrl are required.' });
+  const targetUrl = url || sourceUrl;
+
+  if (!targetUrl) {
+    return res.status(400).json({ error: 'url or sourceUrl is required.' });
   }
 
   if (!ownerId) {
@@ -390,6 +395,8 @@ app.post('/api/v1/clips', async (req: AuthenticatedRequest, res: Response) => {
   }
 
   try {
+    let canonicalKey = extractCanonicalKey(targetUrl);
+
     // Verify board ownership if boardId is provided
     if (boardId) {
       const board = await prisma.board.findFirst({
@@ -399,6 +406,42 @@ app.post('/api/v1/clips', async (req: AuthenticatedRequest, res: Response) => {
       if (!board) {
         return res.status(403).json({ error: 'Unauthorized to add to this board.' });
       }
+
+      if (!forceAdd) {
+        const existingClip = await prisma.clip.findFirst({
+          where: { boardId, canonicalKey }
+        });
+        
+        if (existingClip) {
+          return res.status(409).json({
+            duplicate: true,
+            existingClip: { id: existingClip.id, title: existingClip.title, createdAt: existingClip.createdAt },
+            message: 'You already have this item in this board.'
+          });
+        }
+      }
+    }
+
+    if (!title) {
+      const clip = await prisma.clip.create({
+        data: {
+          boardId: boardId || null,
+          ownerId,
+          title: 'Processing...',
+          price: null,
+          currency: 'USD',
+          sourceUrl: targetUrl,
+          storeName: 'Online Store',
+          umbrellaTag: 'Leisure',
+          typeTag: 'Other',
+          canonicalKey,
+          status: 'PENDING'
+        },
+      });
+
+      await scrapeQueue.add('scrape-clip', { url: targetUrl, clipId: clip.id });
+      
+      return res.status(202).json(clip);
     }
 
     const clip = await prisma.clip.create({
@@ -409,16 +452,48 @@ app.post('/api/v1/clips', async (req: AuthenticatedRequest, res: Response) => {
         price: price ? parseFloat(price) : null,
         currency: currency ? escapeHtml(currency.trim()) : 'USD',
         imageUrl: imageUrl ? imageUrl.trim() : null,
-        sourceUrl: sourceUrl.trim(),
+        sourceUrl: targetUrl.trim(),
         storeName: storeName ? escapeHtml(storeName.trim()) : 'Online Store',
         umbrellaTag: umbrellaTag ? escapeHtml(umbrellaTag.trim()) : 'Leisure',
         typeTag: typeTag ? escapeHtml(typeTag.trim()) : 'Other',
+        canonicalKey,
+        status: 'SUCCESS'
       },
     });
+
+    if (clip.price !== null) {
+      await prisma.priceHistory.create({
+        data: {
+          clipId: clip.id,
+          price: clip.price,
+          currency: clip.currency
+        }
+      });
+    }
 
     res.status(201).json(clip);
   } catch (error) {
     res.status(500).json({ error: 'Failed to create clip.' });
+  }
+});
+
+// Get clip status
+app.get('/api/v1/clips/:id/status', async (req: AuthenticatedRequest, res: Response) => {
+  const { id } = req.params;
+  const ownerId = req.anonIdentity?.id;
+
+  try {
+    const clip = await prisma.clip.findUnique({
+      where: { id }
+    });
+    
+    if (!clip || clip.ownerId !== ownerId) {
+      return res.status(404).json({ error: 'Clip not found.' });
+    }
+
+    res.json({ status: clip.status, clip });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to get clip status.' });
   }
 });
 
@@ -774,10 +849,56 @@ app.get('/api/v1/search', async (req: AuthenticatedRequest, res: Response) => {
   }
 });
 
+// --- NOTIFICATIONS ENDPOINTS ---
+
+app.get('/api/v1/notifications', async (req: AuthenticatedRequest, res: Response) => {
+  const ownerId = req.anonIdentity?.id;
+  if (!ownerId) return res.status(401).json({ error: 'Session not established.' });
+
+  try {
+    const notifications = await prisma.notification.findMany({
+      where: { userId: ownerId },
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+    });
+    res.json(notifications);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to get notifications.' });
+  }
+});
+
+app.patch('/api/v1/notifications/:id/read', async (req: AuthenticatedRequest, res: Response) => {
+  const { id } = req.params;
+  const ownerId = req.anonIdentity?.id;
+  if (!ownerId) return res.status(401).json({ error: 'Session not established.' });
+
+  try {
+    const notification = await prisma.notification.findFirst({
+      where: { id, userId: ownerId }
+    });
+
+    if (!notification) return res.status(404).json({ error: 'Notification not found.' });
+
+    const updated = await prisma.notification.update({
+      where: { id },
+      data: { read: true }
+    });
+    res.json(updated);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to mark notification read.' });
+  }
+});
+
 // Start backend server
 if (process.env.NODE_ENV !== 'test') {
-  app.listen(PORT, () => {
+  app.listen(PORT, async () => {
     console.log(`[GiftGrid Server] Running on http://localhost:${PORT}`);
+    try {
+      await setupRecurringJobs();
+      console.log('[GiftGrid Server] Recurring background jobs scheduled.');
+    } catch (e) {
+      console.error('[GiftGrid Server] Failed to setup recurring jobs:', e);
+    }
   });
 }
 
