@@ -21,20 +21,21 @@ GiftGrid is a wishlist aggregation engine that focuses on core backend features 
 GiftGrid utilizes an event-driven background processing architecture to handle unreliable external scraping requests without blocking the main API thread.
 
 ```mermaid
-graph TD
+flowchart TB
     Client[Client / Browser] -->|POST /api/v1/clips| API[Express API Server]
+    API -.->|202 Accepted| Client
     
     subgraph Backend Services
-        API -->|Enqueue 'PENDING'| RedisQueue[(Redis In-Memory Queues)]
-        API -.->|202 Accepted| Client
+        direction TB
+        API -->|Enqueue 'PENDING'| RedisQueue[(Redis Queues)]
         
-        RedisQueue -->|Consume| ScrapeWorker[BullMQ Scrape Worker]
+        RedisQueue -->|Consume| ScrapeWorker[Scrape Worker]
         ScrapeWorker -->|HTTP Request| Vendor[E-Commerce Sites]
-        ScrapeWorker -->|Classify| Groq[Groq AI API]
+        ScrapeWorker -->|Classify| Groq[Groq AI]
         ScrapeWorker -->|Update 'SUCCESS'| DB[(PostgreSQL)]
         
-        Cron[Master Cron Job] -->|Trigger 6h| PriceQueue[(Price Check Queue)]
-        PriceQueue -->|Consume| PriceWorker[BullMQ Price Worker]
+        Cron[Master Cron Job] -->|Trigger 6h| PriceQueue[(Price Queue)]
+        PriceQueue -->|Consume| PriceWorker[Price Worker]
         PriceWorker -->|Re-fetch Price| Vendor
         PriceWorker -->|Update PriceHistory| DB
     end
