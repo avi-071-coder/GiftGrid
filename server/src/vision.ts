@@ -61,7 +61,7 @@ export async function extractFromScreenshot(imageBase64: string, mimeType: strin
     throw new Error(`Groq vision API error ${response.status}: ${errText}`);
   }
 
-  const json = await response.json();
+  const json: any = await response.json();
   const raw: string = json.choices?.[0]?.message?.content?.trim() || '';
 
   // Strip any markdown fences the model may wrap the JSON in
